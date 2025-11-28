@@ -58,23 +58,27 @@ def escape_html(s):
     )
 
 # --- File upload UI
-col1, col2 = st.columns(2)
-with col1:
-    std_file = st.file_uploader("Upload Standard Access Excel", type=["xlsx"], key="std")
-with col2:
-    clt_file = st.file_uploader("Upload Client Access Excel", type=["xlsx"], key="clt")
+st.header("Upload Client Access Excel")
+clt_file = st.file_uploader("Upload Client Excel", type=["xlsx"])
 
-if not std_file or not clt_file:
-    st.info("Upload both Standard and Client Excel files to see findings. Files must share the same headers and Column A must be the Security Group column.")
+# Load built-in Standard Excel stored in the repo
+try:
+    std_df = pd.read_excel("standard_data.xlsx")
+except Exception as e:
+    st.error("❌ Missing built-in file: standard_data.xlsx. Please add it to your GitHub repo.")
     st.stop()
 
-# --- Read Excel files
+if not clt_file:
+    st.info("Please upload the Client Excel file to continue.")
+    st.stop()
+
+# Load Client Excel
 try:
-    std_df = pd.read_excel(std_file)
     clt_df = pd.read_excel(clt_file)
 except Exception as e:
-    st.error(f"Error reading Excel files: {e}")
+    st.error(f"Error reading Client Excel file: {e}")
     st.stop()
+
 
 # Drop unnamed empty columns
 std_df = std_df.loc[:, ~std_df.columns.str.contains('^Unnamed')]
@@ -130,8 +134,8 @@ st.header("Findings")
 
 c1, c2 = st.columns(2)
 with c1:
-    st.subheader("1) Security groups in Standard but NOT in Client")
-    st.markdown("**Label:** Security group that does not exist in tenant")
+    st.subheader("1) Security groups that do not exist in tenant")
+    st.markdown("**Description:** These security groups are available in Workday defaults based on areas implemented, but upon checking they were not found in the tenant.")
     st.write(f"Total: {len(only_in_std)}")
     if only_in_std:
         # print one per line
@@ -140,8 +144,8 @@ with c1:
         st.success("No security groups missing in tenant (Standard vs Client).")
 
 with c2:
-    st.subheader("2) Security groups in Client but NOT in Standard")
-    st.markdown("**Label:** Custom security group")
+    st.subheader("2) Custom Security Groups")
+    st.markdown("**Description:** These are the sustom security groups which might be created as part of requirement but they are highlighted here because they are not part of Workday defaults")
     st.write(f"Total: {len(only_in_clt)}")
     if only_in_clt:
         st.text("\n".join(only_in_clt))
@@ -151,7 +155,7 @@ with c2:
 st.markdown("---")
 
 # --- UI: Finding 3 table (HTML)
-st.subheader("3) Row-level differences (only rows with at least one difference)")
+st.subheader("3) Security Group difference report: ")
 
 if html_diff_df.empty:
     st.success("No row-level differences found for security groups present in both files.")
@@ -169,13 +173,12 @@ def to_excel_bytes(missing_sgs, custom_sgs, differences_df):
     with pd.ExcelWriter(output, engine="xlsxwriter") as writer:
         pd.DataFrame({SG_COL: missing_sgs}).to_excel(writer, sheet_name="Missing_SGs", index=False)
         pd.DataFrame({SG_COL: custom_sgs}).to_excel(writer, sheet_name="Custom_SGs", index=False)
-        # differences sheet: write the diff_export_df (plain text with prefixes)
         if differences_df.empty:
             pd.DataFrame().to_excel(writer, sheet_name="Row_Differences", index=False)
         else:
             differences_df.to_excel(writer, sheet_name="Row_Differences", index=False)
-        writer.save()
     return output.getvalue()
+
 
 excel_bytes = to_excel_bytes(only_in_std, only_in_clt, diff_export_df)
 now = datetime.utcnow().strftime("%Y%m%dT%H%M%SZ")
@@ -187,3 +190,4 @@ st.download_button(
 )
 
 st.info("Notes: 'Missing:' lines are plain black text. 'Extra:' lines are shown in red in the app UI (they are plain text in the downloaded Excel).")
+
